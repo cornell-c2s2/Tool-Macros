@@ -1,0 +1,85 @@
+#!/bin/python3
+
+import sys, getopt, os, re
+
+name = sys.argv[0]
+args = sys.argv[1:]
+opts = []
+
+def usage():
+	print(f"{name} -n name \"input file\" \"output folder\"")
+
+try:
+	opts, args = getopt.getopt(args, "hn:", ["name=", "help"])
+except getopt.GetoptError as err:
+	print(err)
+	usage()
+	sys.exit(2)
+
+def lint(name):
+	return re.sub(r"^(.+?)(?:__pickled)?(?:\.v)?$", r'\1', os.path.split(name)[1])
+
+params = {
+	"oldname" : lint(args[0]),
+	"name" : lint(args[0]),
+	"input" : args[0],
+	"output" : args[1]
+}
+
+def gopt(l, s=None):
+	if not s:
+		s = l[0]
+	
+	return (f"-{s}", f"--{l}")
+
+for o, a in opts:
+	if o in gopt("help"):
+		usage()
+		sys.exit()
+	elif o in gopt("name"):
+		params["name"] = a
+
+params["output"] = os.path.join(params["output"], params["name"])
+	
+os.makedirs(params["output"], exist_ok=True)
+
+with open(os.path.join(params["output"], "constraint.sdc"), "w") as f:
+	f.write (
+		f'current_design {params["name"]}\n\n'
+		f'set clk_period 5\n'
+		f'set clk_port_name clk\n\n'
+		f'set clk_name core_clock\n'
+		f'set clk_io_pct 0.2\n'
+		f'set clk_port [get_ports $clk_port_name]\n'
+		f'create_clock -name $clk_name -period $clk_period $clk_port\n\n'
+		f'set non_clock_inputs [lsearch -inline -all -not -exact [all_inputs] $clk_port]\n\n'
+		f'set_input_delay [expr $clk_period * $clk_io_pct] -clock $clk_name $non_clock_inputs\n'
+		f'set_output_delay [expr $clk_period * $clk_io_pct] -clock $clk_name [all_outputs]\n'
+	)
+
+with open(os.path.join(params["output"], "config.mk"), "w") as f:
+	f.write (
+		f'export DESIGN_NAME={params["name"]}\n'
+		f'export PLATFORM=sky130hd\n'
+		f'export VERILOG_FILES=../../{params["name"]}/{params["name"]}.v\n'
+		f'export SDC_FILE=../../{params["name"]}/constraint.sdc\n\n'
+		f'export SYNTH_ARGS=\n'
+		f'export CORE_UTILIZATION=50\n'
+		f'export PLACE_DENSITY=0.90\n'
+		f'export CORE_ASPECT_RATIO=1\n'
+		f'export CORE_MARGIN=5.0\n'
+	)
+
+npath = os.path.join(params["output"], f'{params["name"]}.v')
+
+os.system(f'sv2v {params["input"]} > {npath}')
+
+data = ""
+
+with open(npath, 'r') as f:
+	data = f.read()
+
+data = data.replace(params["oldname"], params["name"])
+
+with open(npath, 'w') as f:
+	f.write(data)
