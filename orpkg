@@ -19,7 +19,7 @@ except getopt.GetoptError as err:
 def lint(name):
 	return re.sub(r"^(.+?)(?:__pickled)?(?:\.v)?$", r'\1', os.path.split(name)[1])
 
-if len(args) <= 2:
+if len(args) < 2:
 	usage()
 	sys.exit(2)
 
